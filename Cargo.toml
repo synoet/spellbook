@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.79"
 axum = "0.6.20"
+git2 = "0.18.1"
 openai = "1.0.0-alpha.13"
 qdrant-client = "1.7.0"
 serde = { version = "1.0.194", features = ["derive"] }

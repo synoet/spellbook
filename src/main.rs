@@ -10,6 +10,7 @@ use shuttle_secrets;
 use shuttle_secrets::SecretStore;
 use std::sync::Arc;
 mod command;
+mod github;
 mod open_ai;
 mod utils;
 
@@ -29,8 +30,6 @@ async fn validate(Json(payload): Json<Value>) -> (StatusCode, String) {
 }
 
 async fn make_client(url: &str, token: &str) -> Result<QdrantClient> {
-    dbg!(url);
-    dbg!(token);
     let client = QdrantClient::from_url(url).with_api_key(token).build()?;
     Ok(client)
 }
@@ -53,6 +52,11 @@ async fn process(
     }
 
     (StatusCode::OK, "Processed".to_string())
+}
+
+async fn process_webhook(Json(payload): Json<github::PushWebhookPayload>) -> StatusCode {
+    let result = github::process_payload(payload).unwrap();
+    StatusCode::OK
 }
 
 #[derive(serde::Deserialize)]
@@ -106,6 +110,7 @@ async fn main(#[shuttle_secrets::Secrets] secret_store: SecretStore) -> shuttle_
         .route("/validate", post(validate))
         .route("/process", post(process))
         .route("/search", get(search))
+        .route("/webhook", post(process_webhook))
         .layer(Extension(q_client));
 
     Ok(router.into())
