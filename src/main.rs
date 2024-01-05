@@ -3,7 +3,8 @@ use axum::http::StatusCode;
 use axum::{extract::Query, routing::get, routing::post, Extension, Json, Router};
 use qdrant_client::prelude::QdrantClient;
 use qdrant_client::qdrant::{
-    with_payload_selector::SelectorOptions, PointStruct, SearchPoints, WithPayloadSelector,
+    points_selector::PointsSelectorOneOf, with_payload_selector::SelectorOptions, PointStruct,
+    PointsIdsList, PointsSelector, SearchPoints, WithPayloadSelector,
 };
 use serde_json::{json, Value};
 use shuttle_secrets;
@@ -14,6 +15,7 @@ mod github;
 mod open_ai;
 mod utils;
 
+use command::CompareSubCommands;
 use open_ai::{embed_command, initialize_openai};
 
 static COLLECTION_NAME: &str = "commands-v0";
@@ -34,11 +36,58 @@ async fn make_client(url: &str, token: &str) -> Result<QdrantClient> {
     Ok(client)
 }
 
-async fn process(
+async fn process_webhook(
     Extension(q_client): Extension<Arc<QdrantClient>>,
-    Json(payload): Json<command::Command>,
-) -> (StatusCode, String) {
-    for command in payload.commands.into_iter() {
+    Json(payload): Json<github::PushWebhookPayload>,
+) -> StatusCode {
+    let result = github::process_payload(payload).unwrap();
+
+    let mut commands_to_remove: Vec<command::SubCommand> = result
+        .removed
+        .iter()
+        .flat_map(|file| {
+            let command = serde_json::from_str::<command::Command>(&file).unwrap();
+            return command.commands;
+        })
+        .collect();
+
+    let mut commands_to_add: Vec<command::SubCommand> = result
+        .added
+        .iter()
+        .flat_map(|file| {
+            let command = serde_json::from_str::<command::Command>(&file).unwrap();
+            return command.commands;
+        })
+        .collect();
+
+    for (curr_file, old_file) in result.modified.iter() {
+        let curr_command = serde_json::from_str::<command::Command>(&curr_file).unwrap();
+        let old_command = serde_json::from_str::<command::Command>(&old_file).unwrap();
+
+        let (to_add, to_remove) = curr_command.commands.compare(&old_command.commands);
+
+        commands_to_add.extend(to_add);
+        commands_to_remove.extend(to_remove);
+    }
+
+    let add_count = commands_to_add.len();
+    let remove_count = commands_to_remove.len();
+
+    for command in commands_to_remove.into_iter() {
+        let id = utils::uuid_hash(&command.command.clone());
+        let point_selector_one_of = PointsSelectorOneOf::Points(PointsIdsList {
+            ids: vec![id.try_into().unwrap()],
+        });
+        let points_selector = PointsSelector {
+            points_selector_one_of: Some(point_selector_one_of),
+        };
+        q_client
+            .delete_points(COLLECTION_NAME, None, &points_selector, None)
+            .await
+            .unwrap();
+    }
+
+    for command in commands_to_add.into_iter() {
         let id = utils::uuid_hash(&command.command.clone());
         let payload = serde_json::to_value(&command).unwrap().try_into().unwrap();
         if let Ok(embedding) = embed_command(command).await {
@@ -51,11 +100,8 @@ async fn process(
         }
     }
 
-    (StatusCode::OK, "Processed".to_string())
-}
-
-async fn process_webhook(Json(payload): Json<github::PushWebhookPayload>) -> StatusCode {
-    let result = github::process_payload(payload).unwrap();
+    println!("[INFO] Added {} commands", add_count);
+    println!("[INFO] Removed {} commands", remove_count);
     StatusCode::OK
 }
 
@@ -108,7 +154,6 @@ async fn main(#[shuttle_secrets::Secrets] secret_store: SecretStore) -> shuttle_
     let router = Router::new()
         .route("/health", get(health))
         .route("/validate", post(validate))
-        .route("/process", post(process))
         .route("/search", get(search))
         .route("/webhook", post(process_webhook))
         .layer(Extension(q_client));
