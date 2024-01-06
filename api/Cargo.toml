@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = "1.0.79"
 axum = "0.6.20"
 git2 = "0.18.1"
+http = "1.0.0"
 openai = "1.0.0-alpha.13"
 qdrant-client = "1.7.0"
 serde = { version = "1.0.194", features = ["derive"] }
@@ -16,5 +17,6 @@ shuttle-axum = "0.35.0"
 shuttle-runtime = "0.35.0"
 shuttle-secrets = "0.35.2"
 tokio = "1.28.2"
+tower-http = { version = "0.4.4", features = ["cors", "fs"] }
 tracing = "0.1.40"
 uuid = { version = "1.6.1", features = ["v5"] }

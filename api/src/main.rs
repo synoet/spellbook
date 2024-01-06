@@ -1,11 +1,13 @@
 use anyhow::Result;
 use axum::http::StatusCode;
-use axum::{extract::Query, routing::get, routing::post, Extension, Json, Router};
+use axum::{extract::Query, routing::get, routing::post, Extension, Json, Router, routing::get_service};
 use qdrant_client::prelude::QdrantClient;
 use qdrant_client::qdrant::{
     points_selector::PointsSelectorOneOf, with_payload_selector::SelectorOptions, PointStruct,
     PointsIdsList, PointsSelector, SearchPoints, WithPayloadSelector,
 };
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use serde_json::{json, Value};
 use shuttle_secrets;
 use shuttle_secrets::SecretStore;
@@ -150,13 +152,19 @@ async fn main(#[shuttle_secrets::Secrets] secret_store: SecretStore) -> shuttle_
     .unwrap();
     let q_client = Arc::new(q_client);
     initialize_openai(&secret_store).unwrap();
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any);
+
 
     let router = Router::new()
+        .nest_service("/", get_service(ServeDir::new("dist")))
         .route("/health", get(health))
         .route("/validate", post(validate))
         .route("/search", get(search))
         .route("/webhook", post(process_webhook))
-        .layer(Extension(q_client));
+        .layer(Extension(q_client))
+        .layer(cors);
 
     Ok(router.into())
 }
