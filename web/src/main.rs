@@ -1,12 +1,12 @@
-use yew::prelude::*;
-use yew::{html, Html, Callback, Event};
-use web_sys::HtmlInputElement;
-use gloo_net::http::Request;
 use gloo_console::log;
+use gloo_net::http::Request;
 use serde_wasm_bindgen;
+use web_sys::HtmlInputElement;
+use yew::prelude::*;
+use yew::{html, Callback, Event, Html};
 
 mod command;
- 
+
 #[function_component]
 fn App() -> Html {
     let query_handle = use_state(|| String::default());
@@ -34,13 +34,16 @@ fn App() -> Html {
                 let query = query.clone();
                 let results = results.clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let res = Request::get(&format!("https://spellbook.shuttleapp.rs/search?query={}", query))
-                        .send()
-                        .await
-                        .unwrap()
-                        .json()
-                        .await
-                        .unwrap();
+                    let res = Request::get(&format!(
+                        "https://spellbook.shuttleapp.rs/search?query={}",
+                        query
+                    ))
+                    .send()
+                    .await
+                    .unwrap()
+                    .json()
+                    .await
+                    .unwrap();
 
                     let res: Vec<command::SubCommand> = serde_json::from_value(res).unwrap();
 
@@ -58,14 +61,14 @@ fn App() -> Html {
                 <h1 class="text-4xl font-bold"> {"Spellbook"} </h1>
                 <p class = "text-md text-gray-400 pb-4"> {"A spellbook for cli commands, search for commands from an embedded registry."} </p>
                 <div class="bg-[#1A1A1A] px-8 text-xl w-full h-[100px] rounded-md text-white flex items-center justify-between" >
-                    <input 
+                    <input
                         class="bg-transparent focus-none border-none outline-none text-white w-full h-full"
                         placeholder="Search for a command"
                         {onchange}
                         ref={input_node_ref}
                         value={query}
                     />
-                    <button 
+                    <button
                         class="rounded-full bg-[#301F18] p-4 text-[#FF5B04] hover:opacity-80"
                         {onclick}
                     >

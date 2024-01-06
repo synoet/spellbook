@@ -1,17 +1,21 @@
 use anyhow::Result;
 use axum::http::StatusCode;
-use axum::{extract::Query, routing::get, routing::post, Extension, Json, Router, routing::get_service};
+use axum::{
+    extract::Query, routing::get, routing::get_service, routing::post, Extension, Json, Router,
+};
 use qdrant_client::prelude::QdrantClient;
 use qdrant_client::qdrant::{
     points_selector::PointsSelectorOneOf, with_payload_selector::SelectorOptions, PointStruct,
     PointsIdsList, PointsSelector, SearchPoints, WithPayloadSelector,
 };
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
 use serde_json::{json, Value};
 use shuttle_secrets;
 use shuttle_secrets::SecretStore;
 use std::sync::Arc;
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
+use tower_http::trace::{self, TraceLayer};
+use tracing::Level;
 mod command;
 mod github;
 mod open_ai;
@@ -102,8 +106,8 @@ async fn process_webhook(
         }
     }
 
-    println!("[INFO] Added {} commands", add_count);
-    println!("[INFO] Removed {} commands", remove_count);
+    tracing::info!("Added {} commands", add_count);
+    tracing::info!("Removed {} commands", remove_count);
     StatusCode::OK
 }
 
@@ -135,7 +139,6 @@ async fn search(
 
     let parsed_results = search_result.result.into_iter().map(|result| {
         let payload_str = json!(result.payload).to_string();
-        dbg!(&payload_str);
         serde_json::from_str::<command::SubCommand>(&payload_str).unwrap()
     });
 
@@ -152,10 +155,7 @@ async fn main(#[shuttle_secrets::Secrets] secret_store: SecretStore) -> shuttle_
     .unwrap();
     let q_client = Arc::new(q_client);
     initialize_openai(&secret_store).unwrap();
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any);
-
+    let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any);
 
     let router = Router::new()
         .nest_service("/", get_service(ServeDir::new("dist")))
@@ -164,7 +164,14 @@ async fn main(#[shuttle_secrets::Secrets] secret_store: SecretStore) -> shuttle_
         .route("/search", get(search))
         .route("/webhook", post(process_webhook))
         .layer(Extension(q_client))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
+        )
         .layer(cors);
+
+    tracing::info!("alive");
 
     Ok(router.into())
 }
