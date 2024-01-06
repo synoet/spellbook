@@ -45,15 +45,15 @@ pub struct ProcessedPushPayload {
 pub fn process_payload(payload: PushWebhookPayload) -> Result<ProcessedPushPayload> {
     std::fs::remove_dir_all("/tmp/spellbook/repo").unwrap();
     let repo_path = "/tmp/spellbook/repo";
-    let repo = Repository::clone(&payload.repository.url, repo_path).unwrap();
+    let repo = Repository::clone(&payload.repository.url, repo_path)?;
 
     let get_commit = |hash: &str| repo.find_commit(Oid::from_str(hash).unwrap()).unwrap();
 
     let curr_commit = get_commit(&payload.after);
     let prev_commit = get_commit(&payload.before);
 
-    let curr_tree = curr_commit.tree().unwrap();
-    let prev_tree = prev_commit.tree().unwrap();
+    let curr_tree = curr_commit.tree()?;
+    let prev_tree = prev_commit.tree()?;
 
     let only_json = |path: &str| path.ends_with(".json");
 

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use axum::http::StatusCode;
 use axum::{
-    extract::Query, routing::get, routing::get_service, routing::post, Extension, Json, Router,
+    extract::Query, routing::get, routing::get_service, routing::post, response::{IntoResponse, Response}, Extension, Json, Router,
 };
 use qdrant_client::prelude::QdrantClient;
 use qdrant_client::qdrant::{
@@ -26,6 +26,27 @@ use open_ai::{embed_command, initialize_openai};
 
 static COLLECTION_NAME: &str = "commands-v0";
 
+struct AppError(anyhow::Error);
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Something went wrong: {}", self.0),
+        )
+            .into_response()
+    }
+}
+
+impl<E> From<E> for AppError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        Self(err.into())
+    }
+}
+
 async fn health() -> StatusCode {
     StatusCode::OK
 }
@@ -45,8 +66,8 @@ async fn make_client(url: &str, token: &str) -> Result<QdrantClient> {
 async fn process_webhook(
     Extension(q_client): Extension<Arc<QdrantClient>>,
     Json(payload): Json<github::PushWebhookPayload>,
-) -> StatusCode {
-    let result = github::process_payload(payload).unwrap();
+) -> Result<StatusCode, AppError> {
+    let result = github::process_payload(payload)?;
 
     let mut commands_to_remove: Vec<command::SubCommand> = result
         .removed
@@ -89,8 +110,7 @@ async fn process_webhook(
         };
         q_client
             .delete_points(COLLECTION_NAME, None, &points_selector, None)
-            .await
-            .unwrap();
+            .await?;
     }
 
     for command in commands_to_add.into_iter() {
@@ -101,14 +121,13 @@ async fn process_webhook(
             let points = vec![PointStruct::new(id, vec, payload)];
             q_client
                 .upsert_points(COLLECTION_NAME, None, points, None)
-                .await
-                .unwrap();
+                .await?;
         }
     }
 
     tracing::info!("Added {} commands", add_count);
     tracing::info!("Removed {} commands", remove_count);
-    StatusCode::OK
+    Ok(StatusCode::OK)
 }
 
 #[derive(serde::Deserialize)]
