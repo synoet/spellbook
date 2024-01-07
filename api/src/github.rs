@@ -2,6 +2,7 @@ use anyhow::Result;
 use git2::{Oid, Repository};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use tracing;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct PushWebhookPayload {
@@ -16,11 +17,18 @@ pub struct CommitPayload {
     pub added: Vec<String>,
     pub removed: Vec<String>,
     pub modified: Vec<String>,
+    pub author: AuthorPayload,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct RepositoryPayload {
     pub url: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct AuthorPayload {
+    pub username: String,
+    pub email: String,
 }
 
 fn get_file_content(repo: &git2::Repository, tree: &git2::Tree, file: &str) -> String {
@@ -43,6 +51,12 @@ pub struct ProcessedPushPayload {
 }
 
 pub fn process_payload(payload: PushWebhookPayload) -> Result<ProcessedPushPayload> {
+    tracing::info!(
+        "Processing webhook push payload for commit {}, from user {}({})",
+        payload.after,
+        payload.head_commit.author.username,
+        payload.head_commit.author.email
+    );
     if std::path::Path::new("/tmp/spellbook/repo").exists() {
         std::fs::remove_dir_all("/tmp/spellbook/repo").unwrap();
     }

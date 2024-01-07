@@ -14,6 +14,8 @@ use std::env;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
+use tower_http::trace::{self, TraceLayer};
+use tracing::Level;
 mod command;
 mod github;
 mod open_ai;
@@ -90,6 +92,9 @@ async fn process_webhook(
         commands_to_remove.extend(to_remove);
     }
 
+    let commands_to_remove_count = commands_to_remove.len();
+    let commands_to_add_count = commands_to_add.len();
+
     for command in commands_to_remove.into_iter() {
         let id = utils::uuid_hash(&command.command.clone());
         vector_client.delete(&id).await?;
@@ -102,6 +107,12 @@ async fn process_webhook(
             vector_client.insert(&id, embedding, payload).await?;
         }
     }
+
+    tracing::info!(
+        "Processed webhook: {} commands added, {} commands removed",
+        commands_to_add_count,
+        commands_to_remove_count
+    );
 
     Ok(StatusCode::OK)
 }
@@ -144,6 +155,11 @@ async fn main() -> Result<()> {
     initialize_openai(env::var("OPENAI_TOKEN").unwrap()).unwrap();
     let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any);
 
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .compact()
+        .init();
+
     let router = Router::new()
         .nest_service("/", get_service(ServeDir::new("dist")))
         .route("/health", get(health))
@@ -151,8 +167,16 @@ async fn main() -> Result<()> {
         .route("/search", get(search))
         .route("/webhook", post(process_webhook))
         .layer(Extension(vector_client))
-        .layer(cors);
+        .layer(cors)
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .on_failure(trace::DefaultOnFailure::new().level(Level::ERROR))
+                .on_request(trace::DefaultOnRequest::new().level(Level::INFO))
+                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
+        );
 
+    tracing::info!("Spellbook server started on port: 8080");
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     axum::serve(listener, router).await.unwrap();
 
