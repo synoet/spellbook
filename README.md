@@ -8,4 +8,4 @@ Commands are defined in this [gihub repo](https://github.com/synoet/spellbook-re
 
 ![CleanShot 2024-01-07 at 17 20 19](https://github.com/synoet/spellbook/assets/10552019/486d2c5d-eb6f-4dc3-bb73-c27261cce0e1)
 
-This demo is quite rough but can be tried [here](https://www.spellbook.fly.dev)
+This demo is quite rough but can be tried [here](https://spellbook.fly.dev/)
