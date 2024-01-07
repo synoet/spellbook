@@ -1,11 +1,9 @@
 use crate::command::SubCommand;
 use anyhow::{Error, Result};
 use openai::embeddings::Embedding;
-use shuttle_secrets::SecretStore;
 
-pub fn initialize_openai(secrets: &SecretStore) -> Result<()> {
-    let openai_token = secrets.get("OPENAI_TOKEN").unwrap();
-    openai::set_key(openai_token);
+pub fn initialize_openai(token: String) -> Result<()> {
+    openai::set_key(token);
     Ok(())
 }
 

@@ -1,0 +1,15 @@
+# flyctl launch added from .gitignore
+target
+**/.shuttle-storage
+**/Secrets*.toml
+
+# flyctl launch added from api/.gitignore
+api/target
+api/**/.shuttle-storage
+api/**/Secrets*.toml
+
+# flyctl launch added from web/.gitignore
+web/target
+web/**/.shuttle-storage
+web/**/Secrets*.toml
+fly.toml

@@ -34,16 +34,14 @@ fn App() -> Html {
                 let query = query.clone();
                 let results = results.clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let res = Request::get(&format!(
-                        "https://spellbook.shuttleapp.rs/search?query={}",
-                        query
-                    ))
-                    .send()
-                    .await
-                    .unwrap()
-                    .json()
-                    .await
-                    .unwrap();
+                    let res =
+                        Request::get(&format!("https://spellbook.fly.dev/search?query={}", query))
+                            .send()
+                            .await
+                            .unwrap()
+                            .json()
+                            .await
+                            .unwrap();
 
                     let res: Vec<command::SubCommand> = serde_json::from_value(res).unwrap();
 

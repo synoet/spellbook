@@ -1,21 +1,24 @@
 use anyhow::Result;
 use axum::http::StatusCode;
 use axum::{
-    extract::Query, routing::get, routing::get_service, routing::post, response::{IntoResponse, Response}, Extension, Json, Router,
+    extract::Query,
+    response::{IntoResponse, Response},
+    routing::get,
+    routing::get_service,
+    routing::post,
+    Extension, Json, Router,
 };
+use dotenv::dotenv;
 use qdrant_client::prelude::QdrantClient;
 use qdrant_client::qdrant::{
     points_selector::PointsSelectorOneOf, with_payload_selector::SelectorOptions, PointStruct,
     PointsIdsList, PointsSelector, SearchPoints, WithPayloadSelector,
 };
 use serde_json::{json, Value};
-use shuttle_secrets;
-use shuttle_secrets::SecretStore;
+use std::env;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
-use tower_http::trace::{self, TraceLayer};
-use tracing::Level;
 mod command;
 mod github;
 mod open_ai;
@@ -164,16 +167,17 @@ async fn search(
     (StatusCode::OK, Json(parsed_results.collect()))
 }
 
-#[shuttle_runtime::main]
-async fn main(#[shuttle_secrets::Secrets] secret_store: SecretStore) -> shuttle_axum::ShuttleAxum {
+#[tokio::main]
+async fn main() -> Result<()> {
+    dotenv().ok();
     let q_client = make_client(
-        &secret_store.get("QDRANT_URL").unwrap(),
-        &secret_store.get("QDRANT_TOKEN").unwrap(),
+        &env::var("QDRANT_URL").unwrap(),
+        &env::var("QDRANT_TOKEN").unwrap(),
     )
     .await
     .unwrap();
     let q_client = Arc::new(q_client);
-    initialize_openai(&secret_store).unwrap();
+    initialize_openai(env::var("OPENAI_TOKEN").unwrap()).unwrap();
     let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any);
 
     let router = Router::new()
@@ -183,16 +187,10 @@ async fn main(#[shuttle_secrets::Secrets] secret_store: SecretStore) -> shuttle_
         .route("/search", get(search))
         .route("/webhook", post(process_webhook))
         .layer(Extension(q_client))
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
-                .on_request(trace::DefaultOnRequest::new().level(Level::INFO))
-                .on_failure(trace::DefaultOnFailure::new().level(Level::ERROR))
-                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
-        )
         .layer(cors);
 
-    tracing::info!("alive");
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+    axum::serve(listener, router).await.unwrap();
 
-    Ok(router.into())
+    Ok(())
 }
