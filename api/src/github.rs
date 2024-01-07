@@ -43,7 +43,9 @@ pub struct ProcessedPushPayload {
 }
 
 pub fn process_payload(payload: PushWebhookPayload) -> Result<ProcessedPushPayload> {
-    std::fs::remove_dir_all("/tmp/spellbook/repo").unwrap();
+    if std::path::Path::new("/tmp/spellbook/repo").exists() {
+        std::fs::remove_dir_all("/tmp/spellbook/repo").unwrap();
+    }
     let repo_path = "/tmp/spellbook/repo";
     let repo = Repository::clone(&payload.repository.url, repo_path)?;
 
