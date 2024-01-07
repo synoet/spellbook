@@ -9,12 +9,7 @@ use axum::{
     Extension, Json, Router,
 };
 use dotenv::dotenv;
-use qdrant_client::prelude::QdrantClient;
-use qdrant_client::qdrant::{
-    points_selector::PointsSelectorOneOf, with_payload_selector::SelectorOptions, PointStruct,
-    PointsIdsList, PointsSelector, SearchPoints, WithPayloadSelector,
-};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::env;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -23,11 +18,11 @@ mod command;
 mod github;
 mod open_ai;
 mod utils;
+mod vector_db;
 
 use command::CompareSubCommands;
 use open_ai::{embed_command, initialize_openai};
-
-static COLLECTION_NAME: &str = "commands-v0";
+use vector_db::VectorClient;
 
 struct AppError(anyhow::Error);
 
@@ -61,13 +56,8 @@ async fn validate(Json(payload): Json<Value>) -> (StatusCode, String) {
     }
 }
 
-async fn make_client(url: &str, token: &str) -> Result<QdrantClient> {
-    let client = QdrantClient::from_url(url).with_api_key(token).build()?;
-    Ok(client)
-}
-
 async fn process_webhook(
-    Extension(q_client): Extension<Arc<QdrantClient>>,
+    Extension(vector_client): Extension<Arc<VectorClient>>,
     Json(payload): Json<github::PushWebhookPayload>,
 ) -> Result<StatusCode, AppError> {
     let result = github::process_payload(payload)?;
@@ -100,36 +90,19 @@ async fn process_webhook(
         commands_to_remove.extend(to_remove);
     }
 
-    let add_count = commands_to_add.len();
-    let remove_count = commands_to_remove.len();
-
     for command in commands_to_remove.into_iter() {
         let id = utils::uuid_hash(&command.command.clone());
-        let point_selector_one_of = PointsSelectorOneOf::Points(PointsIdsList {
-            ids: vec![id.try_into().unwrap()],
-        });
-        let points_selector = PointsSelector {
-            points_selector_one_of: Some(point_selector_one_of),
-        };
-        q_client
-            .delete_points(COLLECTION_NAME, None, &points_selector, None)
-            .await?;
+        vector_client.delete(&id).await?;
     }
 
     for command in commands_to_add.into_iter() {
         let id = utils::uuid_hash(&command.command.clone());
         let payload = serde_json::to_value(&command).unwrap().try_into().unwrap();
         if let Ok(embedding) = embed_command(command).await {
-            let vec: Vec<f32> = embedding.vec.iter().map(|&x| x as f32).collect();
-            let points = vec![PointStruct::new(id, vec, payload)];
-            q_client
-                .upsert_points(COLLECTION_NAME, None, points, None)
-                .await?;
+            vector_client.insert(&id, embedding, payload).await?;
         }
     }
 
-    tracing::info!("Added {} commands", add_count);
-    tracing::info!("Removed {} commands", remove_count);
     Ok(StatusCode::OK)
 }
 
@@ -139,44 +112,35 @@ struct SearchQueryParams {
 }
 
 async fn search(
-    Extension(q_client): Extension<Arc<QdrantClient>>,
+    Extension(vector_client): Extension<Arc<VectorClient>>,
     Query(query): Query<SearchQueryParams>,
-) -> (StatusCode, Json<Vec<command::SubCommand>>) {
+) -> Result<(StatusCode, Json<Vec<command::SubCommand>>), AppError> {
     let embedded_query = open_ai::embed_query(&query.query).await.unwrap();
 
-    let vec: Vec<f32> = embedded_query.vec.iter().map(|&x| x as f32).collect();
-    let payload_selector = WithPayloadSelector {
-        selector_options: Some(SelectorOptions::Enable(true)),
-    };
+    let search_result = vector_client.search(embedded_query, 5).await?;
 
-    let search_points = SearchPoints {
-        collection_name: COLLECTION_NAME.to_string(),
-        vector: vec,
-        limit: 5,
-        with_payload: Some(payload_selector),
-        ..Default::default()
-    };
+    let sub_commands: Vec<command::SubCommand> = search_result
+        .result
+        .into_iter()
+        .filter_map(|result| match result.try_into() {
+            Ok(sub_command) => Some(sub_command),
+            Err(_) => None,
+        })
+        .collect();
 
-    let search_result = q_client.search_points(&search_points).await.unwrap();
-
-    let parsed_results = search_result.result.into_iter().map(|result| {
-        let payload_str = json!(result.payload).to_string();
-        serde_json::from_str::<command::SubCommand>(&payload_str).unwrap()
-    });
-
-    (StatusCode::OK, Json(parsed_results.collect()))
+    Ok((StatusCode::OK, Json(sub_commands)))
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenv().ok();
-    let q_client = make_client(
+    let vector_client = VectorClient::new(
         &env::var("QDRANT_URL").unwrap(),
         &env::var("QDRANT_TOKEN").unwrap(),
     )
     .await
     .unwrap();
-    let q_client = Arc::new(q_client);
+    let vector_client = Arc::new(vector_client);
     initialize_openai(env::var("OPENAI_TOKEN").unwrap()).unwrap();
     let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any);
 
@@ -186,7 +150,7 @@ async fn main() -> Result<()> {
         .route("/validate", post(validate))
         .route("/search", get(search))
         .route("/webhook", post(process_webhook))
-        .layer(Extension(q_client))
+        .layer(Extension(vector_client))
         .layer(cors);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();

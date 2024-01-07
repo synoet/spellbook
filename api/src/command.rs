@@ -1,4 +1,7 @@
+use anyhow::Result;
+use qdrant_client::qdrant::ScoredPoint;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashSet;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -41,5 +44,14 @@ impl CompareSubCommands for Vec<SubCommand> {
             added.into_iter().cloned().collect::<Vec<_>>().clone(),
             removed.into_iter().cloned().collect::<Vec<_>>().clone(),
         )
+    }
+}
+
+impl TryFrom<ScoredPoint> for SubCommand {
+    type Error = anyhow::Error;
+    fn try_from(scored_point: ScoredPoint) -> Result<Self> {
+        let payload_str = json!(scored_point.payload).to_string();
+        let sub_command = serde_json::from_str::<SubCommand>(&payload_str)?;
+        Ok(sub_command)
     }
 }
