@@ -1,7 +1,11 @@
 FROM rust:latest as builder
 
+ARG API_URL
+ENV API_URL=$API_URL
+
 WORKDIR /usr/src/app
 COPY . .
+RUN rustup target add wasm32-unknown-unknown
 RUN --mount=type=cache,target=/usr/local/cargo,from=rust:latest,source=/usr/local/cargo \
     --mount=type=cache,target=target \
     cargo build --release && mv ./target/release/spellbook ./spellbook 

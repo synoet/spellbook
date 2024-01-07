@@ -9,6 +9,7 @@ mod command;
 
 #[function_component]
 fn App() -> Html {
+    let api_url = std::env!("API_URL");
     let query_handle = use_state(|| String::default());
     let query = (*query_handle).clone();
     let input_node_ref = use_node_ref();
@@ -35,7 +36,7 @@ fn App() -> Html {
                 let results = results.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     let res =
-                        Request::get(&format!("https://spellbook.fly.dev/search?query={}", query))
+                        Request::get(&format!("{}/search?query={}", api_url, query))
                             .send()
                             .await
                             .unwrap()

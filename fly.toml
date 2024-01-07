@@ -20,3 +20,6 @@ primary_region = "ewr"
   cpu_kind = "shared"
   cpus = 1
   memory_mb = 1024
+
+[build.args]
+  API_URL = "https://spellbook.fly.dev"
