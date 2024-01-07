@@ -1,6 +1,7 @@
 # flyctl launch added from .gitignore
 target
 **/.shuttle-storage
+dist
 **/Secrets*.toml
 
 # flyctl launch added from api/.gitignore
