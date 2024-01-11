@@ -5,7 +5,9 @@ use serde_wasm_bindgen;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 mod web_sys_ext;
+use gloo_timers::callback::Timeout;
 use gloo_timers::future::TimeoutFuture;
+use std::rc::Rc;
 use yew::{html, Callback, Html};
 mod command;
 
@@ -22,10 +24,9 @@ fn ClipBoardIcon() -> Html {
 fn App() -> Html {
     let api_url = std::env!("API_URL");
     let input_node_ref = use_node_ref();
-
+    let timeout_handle = use_state(|| Rc::new(None::<Timeout>));
     let show_copied_notification_handle = use_state(|| false);
     let show_copied_notification = (*show_copied_notification_handle).clone();
-
     let results_handle = use_state(|| Vec::new());
     let results = (*results_handle).clone();
     let is_loading_handle = use_state(|| false);
@@ -99,12 +100,30 @@ fn App() -> Html {
             let input_node_ref = input_node_ref.clone();
 
             move |e: KeyboardEvent| {
+                let input_node_ref = input_node_ref.clone();
+                let search = search.clone();
+
+                let timeout_handle = timeout_handle.clone();
+                let timeout = Rc::clone(&timeout_handle);
                 if e.key() == "Enter" {
                     if let Some(input) = input_node_ref.cast::<HtmlInputElement>() {
                         search.emit(input.value());
                     }
                 } else {
-                    ()
+                    if let Some(input) = input_node_ref.cast::<HtmlInputElement>() {
+                        wasm_bindgen_futures::spawn_local(async move {
+                            let input = input.clone();
+                            if let Ok(timeout) = Rc::try_unwrap(timeout) {
+                                timeout.unwrap().cancel();
+                            }
+                            let timeout = Timeout::new(500, move || {
+                                if input.value().len() > 0 {
+                                    search.emit(input.value());
+                                }
+                            });
+                            timeout_handle.set(Rc::new(Some(timeout)));
+                        });
+                    }
                 }
             }
         })
