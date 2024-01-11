@@ -868,6 +868,8 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbb143cf96099802033e0d4f4963b19fd2e0b728bcf076cd9cf7f6634f092994"
 dependencies = [
+ "futures-channel",
+ "futures-core",
  "js-sys",
  "wasm-bindgen",
 ]
@@ -2687,7 +2689,9 @@ version = "0.1.0"
 dependencies = [
  "gloo-console 0.3.0",
  "gloo-net 0.2.6",
+ "gloo-timers 0.3.0",
  "gloo-utils 0.2.0",
+ "js-sys",
  "serde",
  "serde-wasm-bindgen 0.6.3",
  "serde_json",

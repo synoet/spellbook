@@ -1,15 +1,30 @@
+use crate::web_sys_ext::window;
 use gloo_console::log;
 use gloo_net::http::Request;
 use serde_wasm_bindgen;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
+mod web_sys_ext;
+use gloo_timers::future::TimeoutFuture;
 use yew::{html, Callback, Html};
 mod command;
+
+#[function_component]
+fn ClipBoardIcon() -> Html {
+    html! {
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
+        </svg>
+    }
+}
 
 #[function_component]
 fn App() -> Html {
     let api_url = std::env!("API_URL");
     let input_node_ref = use_node_ref();
+
+    let show_copied_notification_handle = use_state(|| false);
+    let show_copied_notification = (*show_copied_notification_handle).clone();
 
     let results_handle = use_state(|| Vec::new());
     let results = (*results_handle).clone();
@@ -46,11 +61,30 @@ fn App() -> Html {
         })
     };
 
+    let clipboard: Callback<String> = {
+        Callback::from({
+            move |input: String| {
+                let input = input.clone();
+                let show_copied_notification_handle = show_copied_notification_handle.clone();
+                let window = window().expect("should have a Window");
+                let clipboard = window
+                    .navigator()
+                    .clipboard()
+                    .expect("should have Clipboard");
+                wasm_bindgen_futures::spawn_local(async move {
+                    let _ = clipboard.write_text(&input);
+                    show_copied_notification_handle.set(true);
+                    TimeoutFuture::new(1000).await;
+                    show_copied_notification_handle.set(false);
+                });
+            }
+        })
+    };
+
     let onclick: Callback<MouseEvent> = {
         Callback::from({
             let search = search.clone();
             let input_node_ref = input_node_ref.clone();
-
             move |_| {
                 if let Some(input) = input_node_ref.cast::<HtmlInputElement>() {
                     search.emit(input.value());
@@ -114,19 +148,38 @@ fn App() -> Html {
 
                     } else                     if results.len() > 0 {
                         html! {
-                        <div class="bg-[#1A1A1A] flex flex-col space-y-2 rounded-md p-4">
+                        <div class="bg-[#1A1A1A] flex flex-col space-y-2 rounded-md p-4 relative">
                             {
                                     results.into_iter().map(|result| {
+                                        let command = result.command.clone();
+                                        let clipboard = clipboard.clone();
                                         html! {
-                                            <div class="bg-[#252525] rounded-md text-xl w-full  rounded-md text-white flex space-y-2 p-4 flex-col" >
-                                                <h1 class="text-lg text-white"> {result.command} </h1>
-                                                <p class="text-gray-400 text-sm"> {result.description} </p>
+                                            <div class="bg-[#252525] rounded-md text-xl w-full  rounded-md text-white flex space-y-2 p-4 items-center justify-between" >
+                                                <div class="flex flex-col space-y-2">
+                                                    <h1 class="text-lg text-white"> {result.command} </h1>
+                                                    <p class="text-gray-400 text-sm"> {result.description} </p>
+                                                </div>
+                                                <button
+                                                onclick={move |_| clipboard.emit(command.clone())}
+                                                class="bg-gray-100/10 p-3 rounded-md hover:bg-gray-100/20">
+                                                    <ClipBoardIcon />
+                                                </button>
                                             </div>
                                         }
                                     }).collect::<Html>()
 
                             }
-
+                        {
+                            if show_copied_notification {
+                                html! {
+                                    <div class="bg-white rounded-full text-lg px-4 text-black flex text-center py-2 absolute bottom-5 left-[40%]" >
+                                        <p>{"Copied to Clipboard!"}</p>
+                                    </div>
+                                }
+                            } else {
+                                html! {<> </>}
+                            }
+                        }
                             <p class="text-center text-gray-400 pt-4">{"Can't find the command you're looking for? contribute to the registry "} <a class="text-[#FF5B04]" href="https://github.com/synoet/spellbook-registry">{"here"}</a></p>
                         </div>
                         }
