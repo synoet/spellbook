@@ -11,7 +11,10 @@ RUN --mount=type=cache,target=/usr/local/cargo,from=rust:latest,source=/usr/loca
     cargo build --release && mv ./target/release/spellbook ./spellbook 
 
 RUN --mount=type=cache,target=/usr/local/cargo,from=rust:latest,source=/usr/local/cargo \
-    cargo install trunk && cd web && trunk build --release
+    cargo install trunk
+
+RUN --mount=type=cache,target=/usr/local/cargo,from=rust:latest,source=/usr/local/cargo \
+    cd web && trunk build --release
 
 FROM debian:bookworm
 RUN apt-get update
